@@ -89,15 +89,19 @@ export function AppSidebar() {
     <Sidebar side="right">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary">
-            <Package className="h-5 w-5 text-primary-foreground" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="Group New Technology"
+            className="h-10 w-10 rounded-md object-contain"
+            style={{ background: "rgba(255,255,255,0.9)", padding: "2px" }}
+            data-testid="img-sidebar-logo"
+          />
           <div>
             <h2 className="text-sm font-semibold" data-testid="text-app-title">
-              {isWarehouse && language === "zh" ? "库存管理系统" : "نظام إدارة المخزون"}
+              {isWarehouse && language === "zh" ? "Group New Technology" : "Group New Technology"}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {isWarehouse && language === "zh" ? "中国进口管理" : "إدارة الاستيراد من الصين"}
+              {isWarehouse && language === "zh" ? "库存管理系统" : "نظام إدارة المخزون"}
             </p>
           </div>
         </div>

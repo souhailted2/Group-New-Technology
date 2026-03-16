@@ -486,6 +486,17 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/orders/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.confirmOrder(id);
+      if (!updated) return res.status(404).json({ message: "الطلب غير موجود" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ message: e.message });
+    }
+  });
+
   app.get("/api/suppliers/:id/ordered-items", requireAuth, async (req, res) => {
     try {
       const items = await storage.getSupplierOrderedItems(parseInt(req.params.id));

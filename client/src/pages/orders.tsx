@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, ShoppingCart, Printer, RotateCcw, Pencil } from "lucide-react";
+import { Plus, ShoppingCart, Printer, RotateCcw, Pencil, CheckCircle } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import { useAuth } from "@/App";
 import { useLanguage } from "@/lib/language-context";
@@ -47,6 +47,7 @@ export default function Orders() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const hidePrice = user?.role === "warehouse";
+  const isAdmin = user?.role === "admin";
   const [dialogOpen, setDialogOpen] = useState(false);
   const [supplierId, setSupplierId] = useState("");
   const [orderItems, setOrderItems] = useState<OrderItemDraft[]>([]);
@@ -279,8 +280,8 @@ export default function Orders() {
                             <TableHead>{t("orders.quantityOrdered", language)}</TableHead>
                             <TableHead>{t("common.quantity", language)}</TableHead>
                             <TableHead>المتبقي</TableHead>
-                            {!hidePrice && <TableHead>السعر</TableHead>}
-                            {!hidePrice && <TableHead>العملة</TableHead>}
+                            {isAdmin && <TableHead>السعر</TableHead>}
+                            {isAdmin && <TableHead>العملة</TableHead>}
                             <TableHead>تصفير</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -309,10 +310,10 @@ export default function Orders() {
                                   {item.quantityRequested - item.quantityOrdered}
                                 </span>
                               </TableCell>
-                              {!hidePrice && <TableCell>
+                              {isAdmin && <TableCell>
                                 <Input type="number" step="0.01" className="w-24" value={item.price} onChange={(e) => updateItem(idx, "price", parseFloat(e.target.value) || 0)} data-testid={`input-price-${item.productId}`} />
                               </TableCell>}
-                              {!hidePrice && <TableCell>
+                              {isAdmin && <TableCell>
                                 <Select value={item.currency} onValueChange={(v) => updateItem(idx, "currency", v)}>
                                   <SelectTrigger className="w-24">
                                     <SelectValue />
@@ -351,9 +352,9 @@ export default function Orders() {
                     <TableRow>
                       <TableHead>{t("common.product", language)}</TableHead>
                       <TableHead>{t("common.quantity", language)}</TableHead>
-                      {!hidePrice && <TableHead>{t("orders.price", language)}</TableHead>}
-                      {!hidePrice && <TableHead>{t("orders.currency", language)}</TableHead>}
-                      {!hidePrice && <TableHead>{t("common.total", language)}</TableHead>}
+                      {isAdmin && <TableHead>{t("orders.price", language)}</TableHead>}
+                      {isAdmin && <TableHead>{t("orders.currency", language)}</TableHead>}
+                      {isAdmin && <TableHead>{t("common.total", language)}</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -368,15 +369,15 @@ export default function Orders() {
                           </div>
                         </TableCell>
                         <TableCell>{item.quantityOrdered}</TableCell>
-                        {!hidePrice && <TableCell>{item.price.toFixed(2)}</TableCell>}
-                        {!hidePrice && <TableCell>{item.currency === "CNY" ? "يوان" : "دولار"}</TableCell>}
-                        {!hidePrice && <TableCell className="font-semibold">{(item.price * item.quantityOrdered).toFixed(2)}</TableCell>}
+                        {isAdmin && <TableCell>{item.price.toFixed(2)}</TableCell>}
+                        {isAdmin && <TableCell>{item.currency === "CNY" ? "يوان" : "دولار"}</TableCell>}
+                        {isAdmin && <TableCell className="font-semibold">{(item.price * item.quantityOrdered).toFixed(2)}</TableCell>}
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
                 </div>
-                {!hidePrice && <div className="flex flex-col gap-2 p-4 bg-muted rounded-md">
+                {isAdmin && <div className="flex flex-col gap-2 p-4 bg-muted rounded-md">
                   {totalCNY > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">المجموع باليوان الصيني:</span>
@@ -413,6 +414,9 @@ function OrdersHistory() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const hidePrice = user?.role === "warehouse";
+  const isAdmin = user?.role === "admin";
+  const [confirmingOrder, setConfirmingOrder] = useState<any>(null);
+  const [confirmPrices, setConfirmPrices] = useState<{[key: number]: {price: string; currency: string}}>({});
   const { data: orders, isLoading } = useQuery<any[]>({
     queryKey: ["/api/orders"],
   });
@@ -438,6 +442,48 @@ function OrdersHistory() {
       toast({ title: "خطأ", description: error.message, variant: "destructive" });
     },
   });
+
+  const confirmOrderMutation = useMutation({
+    mutationFn: async (orderId: number) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setConfirmingOrder(null);
+      toast({ title: "تم تأكيد الطلب بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openConfirmDialog = (order: any) => {
+    const prices: {[key: number]: {price: string; currency: string}} = {};
+    order.items?.forEach((item: any) => {
+      prices[item.id] = { price: String(item.price || 0), currency: item.currency || "CNY" };
+    });
+    setConfirmPrices(prices);
+    setConfirmingOrder(order);
+  };
+
+  const handleSavePricesAndConfirm = async () => {
+    if (!confirmingOrder) return;
+    try {
+      for (const item of confirmingOrder.items || []) {
+        const p = confirmPrices[item.id];
+        if (p) {
+          await apiRequest("PATCH", `/api/order-items/${item.id}`, {
+            price: parseFloat(p.price) || 0,
+            currency: p.currency,
+          });
+        }
+      }
+      confirmOrderMutation.mutate(confirmingOrder.id);
+    } catch (e) {
+      toast({ title: "خطأ في حفظ الأسعار", variant: "destructive" });
+    }
+  };
 
   const openEdit = (item: any) => {
     setEditingItem(item);
@@ -554,6 +600,12 @@ function OrdersHistory() {
                   <Button size="icon" variant="ghost" onClick={() => handlePrintOrder(order)} data-testid={`button-print-order-${order.id}`}>
                     <Printer className="h-4 w-4" />
                   </Button>
+                  {isAdmin && order.confirmed !== "confirmed" && (
+                    <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-600 hover:bg-green-50" onClick={() => openConfirmDialog(order)} data-testid={`button-confirm-order-${order.id}`}>
+                      <CheckCircle className="h-4 w-4" />
+                      تسعير وتأكيد
+                    </Button>
+                  )}
                   <Badge variant={order.confirmed === "confirmed" ? "default" : "secondary"}>
                     {order.confirmed === "confirmed" ? "مؤكد" : "معلق"}
                   </Badge>
@@ -609,6 +661,75 @@ function OrdersHistory() {
           </Card>
         );
       })}
+
+      <Dialog open={!!confirmingOrder} onOpenChange={(open) => { if (!open) setConfirmingOrder(null); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>تسعير وتأكيد الطلب #{confirmingOrder?.id}</DialogTitle>
+          </DialogHeader>
+          {confirmingOrder && (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground">المورد: {confirmingOrder.supplierName}</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>المنتج</TableHead>
+                    <TableHead>الكمية</TableHead>
+                    <TableHead>السعر</TableHead>
+                    <TableHead>العملة</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {confirmingOrder.items?.map((item: any) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <div>
+                          <span>{item.productName || `منتج #${item.productId}`}</span>
+                          {item.productNameZh && <span className="block text-xs text-muted-foreground" dir="ltr">{item.productNameZh}</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>{item.quantityOrdered}</TableCell>
+                      <TableCell>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="w-24"
+                          value={confirmPrices[item.id]?.price ?? "0"}
+                          onChange={(e) => setConfirmPrices(prev => ({ ...prev, [item.id]: { ...prev[item.id], price: e.target.value } }))}
+                          data-testid={`input-confirm-price-${item.id}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={confirmPrices[item.id]?.currency ?? "CNY"}
+                          onValueChange={(v) => setConfirmPrices(prev => ({ ...prev, [item.id]: { ...prev[item.id], currency: v } }))}
+                        >
+                          <SelectTrigger className="w-24">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="CNY">يوان</SelectItem>
+                            <SelectItem value="USD">دولار</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 text-white gap-2"
+                onClick={handleSavePricesAndConfirm}
+                disabled={confirmOrderMutation.isPending}
+                data-testid="button-save-confirm-order"
+              >
+                <CheckCircle className="h-4 w-4" />
+                {confirmOrderMutation.isPending ? "جاري التأكيد..." : "حفظ الأسعار وتأكيد الطلب"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editingItem} onOpenChange={(open) => { if (!open) setEditingItem(null); }}>
         <DialogContent>

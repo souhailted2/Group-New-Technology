@@ -97,6 +97,23 @@ export default function Orders() {
     },
   });
 
+  const createSupplierQuickMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("POST", "/api/suppliers", { name, phone: "", address: "" });
+      return res.json();
+    },
+    onSuccess: (newSupplier: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      setSupplierId(String(newSupplier.id));
+      setShowNewSupplier(false);
+      setNewSupplierName("");
+      toast({ title: "تم إضافة المورد بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setSupplierId("");
     setOrderItems([]);

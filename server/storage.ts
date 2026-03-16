@@ -43,6 +43,7 @@ export interface IStorage {
   getOrders(): Promise<any[]>;
   createOrder(supplierId: number, items: any[]): Promise<Order>;
   updateOrderItem(itemId: number, data: any): Promise<any>;
+  confirmOrder(id: number): Promise<Order>;
   getSupplierOrderedItems(supplierId: number): Promise<any[]>;
   createDelivery(supplierId: number, warehouseId: number, items: any[]): Promise<Delivery>;
   getDeliveries(): Promise<any[]>;
@@ -319,6 +320,11 @@ export class DatabaseStorage implements IStorage {
     if (data.price !== undefined) updateData.price = data.price;
     if (data.currency !== undefined) updateData.currency = data.currency;
     const [updated] = await db.update(orderItems).set(updateData).where(eq(orderItems.id, itemId)).returning();
+    return updated;
+  }
+
+  async confirmOrder(id: number): Promise<Order> {
+    const [updated] = await db.update(orders).set({ confirmed: "confirmed" }).where(eq(orders.id, id)).returning();
     return updated;
   }
 

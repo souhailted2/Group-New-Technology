@@ -351,7 +351,7 @@ export default function Deliveries() {
                           <div
                             className={`rounded-xl border transition-all ${item.selected
                               ? "border-primary/40 bg-primary/5 dark:bg-primary/10"
-                              : "border-border bg-card opacity-60 hover:opacity-80"}`}
+                              : "border-border bg-card hover:border-primary/30 hover:bg-muted/30"}`}
                           >
                             {/* Product header row */}
                             <div className="flex items-start gap-3 p-3">

@@ -513,8 +513,8 @@ export async function registerRoutes(
 
   app.post("/api/deliveries", requireAuth, async (req, res) => {
     try {
-      const { supplierId, warehouseId, items } = req.body;
-      const delivery = await storage.createDelivery(supplierId, warehouseId, items);
+      const { supplierId, warehouseId, items, receivedAt } = req.body;
+      const delivery = await storage.createDelivery(supplierId, warehouseId, items, receivedAt ? new Date(receivedAt) : undefined);
       res.json(delivery);
     } catch (e: any) {
       res.status(400).json({ message: e.message });

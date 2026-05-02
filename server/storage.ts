@@ -426,7 +426,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDeliveries(): Promise<any[]> {
-    const allDeliveries = await db.select().from(deliveries);
+    const allDeliveries = await db.select().from(deliveries).orderBy(desc(deliveries.createdAt));
     const result = [];
     for (const del of allDeliveries) {
       const sup = await db.select().from(suppliers).where(eq(suppliers.id, del.supplierId));

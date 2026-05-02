@@ -64,6 +64,7 @@ export default function SupplierAccounts() {
   const { data: accountData, isLoading: accountLoading } = useQuery<any>({
     queryKey: ["/api/suppliers", selectedSupplier, "account"],
     enabled: !!selectedSupplier,
+    staleTime: 0,
   });
 
   const paymentMutation = useMutation({

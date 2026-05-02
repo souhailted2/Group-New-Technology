@@ -132,7 +132,7 @@ export default function Deliveries() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"], refetchType: "all" });
       setDialogOpen(false);
       resetForm();
       toast({ title: "تم تأكيد التسليم بنجاح" });
@@ -652,7 +652,7 @@ function DeliveriesHistory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"], refetchType: "all" });
       setDeletingDelivery(null);
       toast({ title: "تم حذف التسليم وتصحيح المخزون" });
     },
@@ -669,7 +669,7 @@ function DeliveriesHistory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"], refetchType: "all" });
       setEditingItem(null);
       toast({ title: "تم تحديث البند بنجاح" });
     },

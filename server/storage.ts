@@ -363,10 +363,11 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async createDelivery(supplierId: number, warehouseId: number, items: any[]): Promise<Delivery> {
+  async createDelivery(supplierId: number, warehouseId: number, items: any[], receivedAt?: Date): Promise<Delivery> {
     const [delivery] = await db.insert(deliveries).values({
       supplierId,
       warehouseId,
+      receivedAt: receivedAt || new Date(),
     }).returning();
 
     for (const item of items) {

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, UserPlus, Shield, User, FolderOpen } from "lucide-react";
+import { Plus, UserPlus, Shield, User, FolderOpen, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/App";
 import type { Category } from "@shared/schema";
@@ -34,6 +34,7 @@ export default function UserManagement() {
   const [permDialogOpen, setPermDialogOpen] = useState(false);
   const [permUser, setPermUser] = useState<any>(null);
   const [selectedCats, setSelectedCats] = useState<number[]>([]);
+  const [searchUser, setSearchUser] = useState("");
 
   if (currentUser?.role !== "admin") {
     return (
@@ -198,6 +199,17 @@ export default function UserManagement() {
               ))}
             </div>
           ) : users && users.length > 0 ? (
+            <div className="space-y-3">
+              <div className="relative w-64">
+                <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="بحث بالاسم..."
+                  value={searchUser}
+                  onChange={(e) => setSearchUser(e.target.value)}
+                  className="pr-9"
+                  data-testid="input-search-users"
+                />
+              </div>
             <div className="overflow-x-auto">
             <Table className="min-w-[600px]">
               <TableHeader>
@@ -212,7 +224,7 @@ export default function UserManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u: any, idx: number) => (
+                {users.filter((u: any) => !searchUser.trim() || (u.username || "").toLowerCase().includes(searchUser.toLowerCase()) || (u.displayName || "").toLowerCase().includes(searchUser.toLowerCase())).map((u: any, idx: number) => (
                   <TableRow key={u.id} data-testid={`row-user-${u.id}`}>
                     <TableCell>{idx + 1}</TableCell>
                     <TableCell className="font-medium">{u.username}</TableCell>
@@ -261,6 +273,7 @@ export default function UserManagement() {
                 ))}
               </TableBody>
             </Table>
+            </div>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-12 text-center">

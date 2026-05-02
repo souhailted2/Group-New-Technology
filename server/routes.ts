@@ -1034,5 +1034,84 @@ export async function registerRoutes(
     }
   });
 
+
+  app.delete("/api/orders/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteOrder(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/order-items/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteOrderItem(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/deliveries/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteDelivery(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.patch("/api/delivery-items/:id", requireAdmin, async (req, res) => {
+    try {
+      const updated = await storage.updateDeliveryItem(parseInt(req.params.id), req.body);
+      if (!updated) return res.status(404).json({ message: "البند غير موجود" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/containers/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteContainer(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.patch("/api/container-items/:id", requireAdmin, async (req, res) => {
+    try {
+      const { quantity } = req.body;
+      if (!quantity || quantity < 1) return res.status(400).json({ message: "الكمية غير صالحة" });
+      const updated = await storage.updateContainerItem(parseInt(req.params.id), parseInt(quantity));
+      if (!updated) return res.status(404).json({ message: "البند غير موجود" });
+      res.json(updated);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.delete("/api/container-items/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteContainerItem(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.get("/api/annual-inventory", requireAdmin, async (req, res) => {
+    try {
+      const year = parseInt(req.query.year as string) || new Date().getFullYear();
+      const data = await storage.getAnnualInventory(year);
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   return httpServer;
+
 }

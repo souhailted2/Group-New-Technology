@@ -4,12 +4,15 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Anchor, Ship, CheckCircle } from "lucide-react";
+import { Anchor, Ship, CheckCircle, Search } from "lucide-react";
+import { useState } from "react";
+import { Input } from "@/components/ui/input";
 import type { Container } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Arrivals() {
   const { toast } = useToast();
+  const [searchArrival, setSearchArrival] = useState("");
 
   const { data: containers, isLoading } = useQuery<Container[]>({
     queryKey: ["/api/containers"],
@@ -30,14 +33,34 @@ export default function Arrivals() {
     },
   });
 
-  const shippingContainers = containers?.filter(c => c.status === "shipping") || [];
-  const arrivedContainers = containers?.filter(c => c.status === "arrived") || [];
+  const shippingContainers = (containers?.filter(c => c.status === "shipping") || []).filter(c =>
+    !searchArrival.trim() || (c.containerNumber || "").toLowerCase().includes(searchArrival.toLowerCase())
+      || (c.invoiceNumber || "").toLowerCase().includes(searchArrival.toLowerCase())
+      || (c.shippingCompany || "").toLowerCase().includes(searchArrival.toLowerCase())
+  );
+  const arrivedContainers = (containers?.filter(c => c.status === "arrived") || []).filter(c =>
+    !searchArrival.trim() || (c.containerNumber || "").toLowerCase().includes(searchArrival.toLowerCase())
+      || (c.invoiceNumber || "").toLowerCase().includes(searchArrival.toLowerCase())
+      || (c.shippingCompany || "").toLowerCase().includes(searchArrival.toLowerCase())
+  );
 
   return (
     <div className="p-3 sm:p-6 space-y-4 sm:space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-arrivals-title">وصول الحاويات</h1>
-        <p className="text-muted-foreground">تتبع وصول الحاويات إلى الميناء</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-arrivals-title">وصول الحاويات</h1>
+          <p className="text-muted-foreground">تتبع وصول الحاويات إلى الميناء</p>
+        </div>
+        <div className="relative w-64">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="بحث بالحاوية أو الفاتورة أو الشحن..."
+            value={searchArrival}
+            onChange={(e) => setSearchArrival(e.target.value)}
+            className="pr-9"
+            data-testid="input-search-arrivals"
+          />
+        </div>
       </div>
 
       <div className="space-y-4">

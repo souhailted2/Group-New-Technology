@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { SearchCombobox } from "@/components/search-combobox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, ShoppingCart, Printer, RotateCcw, Pencil, CheckCircle } from "lucide-react";
+import { Plus, ShoppingCart, Printer, RotateCcw, Pencil, CheckCircle, Search, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { openPrintWindow } from "@/lib/printStyles";
 import { useAuth } from "@/App";
 import { useLanguage } from "@/lib/language-context";
@@ -55,6 +60,8 @@ export default function Orders() {
   const [confirmed, setConfirmed] = useState(false);
   const [showNewSupplier, setShowNewSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState("");
+  const [productSearch, setProductSearch] = useState("");
+
 
   const { data: suppliers } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
@@ -116,6 +123,7 @@ export default function Orders() {
   });
 
   const resetForm = () => {
+    setProductSearch("");
     setSupplierId("");
     setOrderItems([]);
     setStep("supplier");
@@ -210,16 +218,17 @@ export default function Orders() {
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
                   <Label>المورد</Label>
-                  <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger data-testid="select-order-supplier">
-                      <SelectValue placeholder={t("orders.selectSupplier", language)} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers?.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchCombobox
+                    selectedId={supplierId}
+                    onSelect={(id) => setSupplierId(id)}
+                    options={suppliers || []}
+                    placeholder="اكتب لاختيار المورد..."
+                    inputTestId="input-search-order-supplier"
+                    optionTestIdPrefix="option-order-supplier"
+                  />
+                  {supplierId && (
+                    <p className="text-xs text-green-600 mt-1">✓ {(suppliers || []).find(s => String(s.id) === supplierId)?.name}</p>
+                  )}
                 </div>
 
                 <div className="border rounded-md p-3 space-y-2">
@@ -271,6 +280,16 @@ export default function Orders() {
                   </div>
                 ) : (
                   <>
+                    <div className="relative">
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        className="pr-9"
+                        placeholder="بحث في السلع..."
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        data-testid="input-search-order-products"
+                      />
+                    </div>
                     <div className="overflow-x-auto">
                       <Table className="min-w-[600px]">
                         <TableHeader>
@@ -286,7 +305,7 @@ export default function Orders() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {orderItems.map((item, idx) => (
+                          {orderItems.map((item, idx) => ({ item, idx })).filter(({ item }) => !productSearch.trim() || item.productName.toLowerCase().includes(productSearch.toLowerCase()) || (item.productNameZh || "").toLowerCase().includes(productSearch.toLowerCase())).map(({ item, idx }) => (
                             <TableRow key={item.productId}>
                               <TableCell>
                                 <Checkbox checked={item.selected} onCheckedChange={() => toggleItem(idx)} data-testid={`checkbox-item-${item.productId}`} />
@@ -417,6 +436,7 @@ function OrdersHistory() {
   const isAdmin = user?.role === "admin";
   const [confirmingOrder, setConfirmingOrder] = useState<any>(null);
   const [confirmPrices, setConfirmPrices] = useState<{[key: number]: {price: string; currency: string}}>({});
+  const [searchOrder, setSearchOrder] = useState("");
   const { data: orders, isLoading } = useQuery<any[]>({
     queryKey: ["/api/orders"],
   });
@@ -484,6 +504,40 @@ function OrdersHistory() {
       toast({ title: "خطأ في حفظ الأسعار", variant: "destructive" });
     }
   };
+
+  const [deletingOrder, setDeletingOrder] = useState<any>(null);
+  const [deletingOrderItem, setDeletingOrderItem] = useState<any>(null);
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/orders/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setDeletingOrder(null);
+      toast({ title: "تم حذف الطلب بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteOrderItemMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/order-items/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      setDeletingOrderItem(null);
+      toast({ title: "تم حذف البند بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
 
   const openEdit = (item: any) => {
     setEditingItem(item);
@@ -583,10 +637,30 @@ function OrdersHistory() {
     );
   }
 
+  const filteredOrders = (orders || []).filter((order: any) => {
+    if (!searchOrder.trim()) return true;
+    const q = searchOrder.toLowerCase();
+    if ((order.supplierName || "").toLowerCase().includes(q)) return true;
+    if ((order.items || []).some((i: any) => (i.productName || "").toLowerCase().includes(q) || (i.productNameZh || "").toLowerCase().includes(q))) return true;
+    return false;
+  });
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">{t("orders.orderHistory", language)}</h2>
-      {orders.map((order: any) => {
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h2 className="text-lg font-semibold">{t("orders.orderHistory", language)}</h2>
+        <div className="relative w-64">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="بحث بالمورد أو المنتج..."
+            value={searchOrder}
+            onChange={(e) => setSearchOrder(e.target.value)}
+            className="pr-9"
+            data-testid="input-search-orders-history"
+          />
+        </div>
+      </div>
+      {filteredOrders.map((order: any) => {
         const orderTotalCNY = order.items?.filter((i: any) => i.currency === "CNY").reduce((s: number, i: any) => s + ((i.price || 0) * i.quantityOrdered), 0) || 0;
         const orderTotalUSD = order.items?.filter((i: any) => i.currency === "USD").reduce((s: number, i: any) => s + ((i.price || 0) * i.quantityOrdered), 0) || 0;
         return (
@@ -600,6 +674,11 @@ function OrdersHistory() {
                   <Button size="icon" variant="ghost" onClick={() => handlePrintOrder(order)} data-testid={`button-print-order-${order.id}`}>
                     <Printer className="h-4 w-4" />
                   </Button>
+                  {isAdmin && (
+                    <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeletingOrder(order)} data-testid={`button-delete-order-${order.id}`}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                   {isAdmin && order.confirmed !== "confirmed" && (
                     <Button size="sm" variant="outline" className="gap-1 text-green-700 border-green-600 hover:bg-green-50" onClick={() => openConfirmDialog(order)} data-testid={`button-confirm-order-${order.id}`}>
                       <CheckCircle className="h-4 w-4" />
@@ -629,11 +708,12 @@ function OrdersHistory() {
                       {!hidePrice && <TableHead>{t("orders.currency", language)}</TableHead>}
                       {!hidePrice && <TableHead>{t("common.total", language)}</TableHead>}
                       {!hidePrice && <TableHead>{t("common.edit", language)}</TableHead>}
+                      {isAdmin && <TableHead></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {order.items.map((item: any) => (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} data-testid={`row-order-item-${item.id}`}>
                         <TableCell>
                           <div>
                             <span>{item.productName || `منتج #${item.productId}`}</span>
@@ -649,6 +729,11 @@ function OrdersHistory() {
                         {!hidePrice && <TableCell>
                           <Button size="icon" variant="ghost" onClick={() => openEdit(item)} data-testid={`button-edit-order-item-${item.id}`}>
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                        </TableCell>}
+                        {isAdmin && <TableCell>
+                          <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeletingOrderItem(item)} data-testid={`button-delete-order-item-${item.id}`}>
+                            <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>}
                       </TableRow>
@@ -730,6 +815,40 @@ function OrdersHistory() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deletingOrder} onOpenChange={(open) => { if (!open) setDeletingOrder(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف الطلب</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف طلب #{deletingOrder?.id} للمورد {deletingOrder?.supplierName}؟ لا يمكن التراجع عن هذا الإجراء.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingOrder && deleteOrderMutation.mutate(deletingOrder.id)} disabled={deleteOrderMutation.isPending}>
+              {deleteOrderMutation.isPending ? "جاري الحذف..." : "تأكيد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deletingOrderItem} onOpenChange={(open) => { if (!open) setDeletingOrderItem(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف البند</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف {deletingOrderItem?.productName} من الطلب؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingOrderItem && deleteOrderItemMutation.mutate(deletingOrderItem.id)} disabled={deleteOrderItemMutation.isPending}>
+              {deleteOrderItemMutation.isPending ? "جاري الحذف..." : "تأكيد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!editingItem} onOpenChange={(open) => { if (!open) setEditingItem(null); }}>
         <DialogContent>

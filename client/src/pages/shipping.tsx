@@ -10,7 +10,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Ship, Eye, Pencil, Printer } from "lucide-react";
+import { Ship, Eye, Pencil, Printer, Search, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { openPrintWindow } from "@/lib/printStyles";
 import { useAuth } from "@/App";
 import type { Warehouse as WarehouseType, Product, ShippingCompany } from "@shared/schema";
@@ -54,6 +58,7 @@ export default function Shipping() {
   const [priceUSD, setPriceUSD] = useState("");
   const [items, setItems] = useState<ShipItem[]>([]);
   const [step, setStep] = useState<"info" | "items">("info");
+  const [shipSearch, setShipSearch] = useState("");
 
   const { data: warehouses } = useQuery<WarehouseType[]>({
     queryKey: ["/api/warehouses"],
@@ -220,6 +225,16 @@ export default function Shipping() {
 
             {step === "items" && (
               <div className="space-y-4 pt-4">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    data-testid="input-search-ship-items"
+                    placeholder="بحث في البضائع..."
+                    value={shipSearch}
+                    onChange={(e) => setShipSearch(e.target.value)}
+                    className="pr-9"
+                  />
+                </div>
                 {items.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">لا توجد بضائع في المخزن</div>
                 ) : (
@@ -234,7 +249,7 @@ export default function Shipping() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {items.map((item, idx) => (
+                      {items.map((item, idx) => ({ item, idx })).filter(({ item }) => !shipSearch.trim() || item.productName.toLowerCase().includes(shipSearch.toLowerCase()) || (item.productNameZh || "").toLowerCase().includes(shipSearch.toLowerCase())).map(({ item, idx }) => (
                         <TableRow key={item.productId}>
                           <TableCell>
                             <Checkbox checked={item.selected} onCheckedChange={() => toggleItem(idx)} />
@@ -280,6 +295,29 @@ function ContainersHistory() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const hidePrice = user?.role === "warehouse";
+  const isAdmin = user?.role === "admin";
+  const [searchContainer, setSearchContainer] = useState("");
+  const [deletingContainer, setDeletingContainer] = useState<any>(null);
+  const [editingContainerItem, setEditingContainerItem] = useState<any>(null);
+  const [deletingContainerItem, setDeletingContainerItem] = useState<any>(null);
+  const [editItemQty, setEditItemQty] = useState("");
+
+  const deleteContainerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/containers/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/warehouse-inventory"] });
+      setDeletingContainer(null);
+      toast({ title: "تم حذف الحاوية وإعادة البضاعة للمخزون" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
   const { data: containersList, isLoading } = useQuery<any[]>({
     queryKey: ["/api/containers"],
   });
@@ -288,6 +326,40 @@ function ContainersHistory() {
   });
 
   const [viewContainer, setViewContainer] = useState<any | null>(null);
+  const updateContainerItemMutation = useMutation({
+    mutationFn: async ({ id, quantity }: { id: number; quantity: number }) => {
+      const res = await apiRequest("PATCH", `/api/container-items/${id}`, { quantity });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setEditingContainerItem(null);
+      setViewContainer((prev: any) => prev ? { ...prev, _refresh: Date.now() } : null);
+      toast({ title: "تم تعديل الكمية بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteContainerItemMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/container-items/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setDeletingContainerItem(null);
+      setViewContainer(null);
+      toast({ title: "تم حذف المنتج وإعادة كميته للمخزون" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
   const [editContainer, setEditContainer] = useState<any | null>(null);
   const [editInvoice, setEditInvoice] = useState("");
   const [editContainerNum, setEditContainerNum] = useState("");
@@ -402,10 +474,31 @@ function ContainersHistory() {
     );
   }
 
+  const filteredContainers = (containersList || []).filter((c: any) => {
+    if (!searchContainer.trim()) return true;
+    const q = searchContainer.toLowerCase();
+    return (c.containerNumber || "").toLowerCase().includes(q)
+      || (c.invoiceNumber || "").toLowerCase().includes(q)
+      || (c.shippingCompanyName || "").toLowerCase().includes(q)
+      || (c.warehouseName || "").toLowerCase().includes(q);
+  });
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">{t("shipping.containerHistory", language)}</h2>
-      {containersList.map((container: any) => (
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h2 className="text-lg font-semibold">{t("shipping.containerHistory", language)}</h2>
+        <div className="relative w-64">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="بحث بالحاوية أو الفاتورة أو الشحن..."
+            value={searchContainer}
+            onChange={(e) => setSearchContainer(e.target.value)}
+            className="pr-9"
+            data-testid="input-search-containers"
+          />
+        </div>
+      </div>
+      {filteredContainers.map((container: any) => (
         <Card key={container.id} data-testid={`card-container-history-${container.id}`}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -422,6 +515,11 @@ function ContainersHistory() {
                 <Button size="icon" variant="ghost" onClick={() => handlePrint(container)} data-testid={`button-print-container-${container.id}`}>
                   <Printer className="h-4 w-4" />
                 </Button>
+                {isAdmin && (
+                  <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeletingContainer(container)} data-testid={`button-delete-container-${container.id}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
                 <Badge variant="secondary" className={statusColors[container.status]}>
                   {statusLabels[container.status] || container.status}
                 </Badge>
@@ -470,11 +568,12 @@ function ContainersHistory() {
                     <TableRow>
                       <TableHead>{t("common.product", language)}</TableHead>
                       <TableHead>{t("common.quantity", language)}</TableHead>
+                      {isAdmin && <TableHead></TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {viewContainer.items.map((item: any) => (
-                      <TableRow key={item.id}>
+                      <TableRow key={item.id} data-testid={`row-container-item-${item.id}`}>
                         <TableCell>
                           <div>
                             <span>{item.productName || `منتج #${item.productId}`}</span>
@@ -484,6 +583,16 @@ function ContainersHistory() {
                           </div>
                         </TableCell>
                         <TableCell>{item.quantity}</TableCell>
+                        {isAdmin && <TableCell>
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingContainerItem(item); setEditItemQty(String(item.quantity)); }} data-testid={`button-edit-container-item-${item.id}`}>
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeletingContainerItem(item)} data-testid={`button-delete-container-item-${item.id}`}>
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </TableCell>}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -498,6 +607,60 @@ function ContainersHistory() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!editingContainerItem} onOpenChange={(open) => { if (!open) setEditingContainerItem(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>تعديل كمية المنتج</DialogTitle>
+          </DialogHeader>
+          {editingContainerItem && (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm font-medium">{editingContainerItem.productName}{editingContainerItem.productNameZh && <span className="block text-muted-foreground" dir="ltr">{editingContainerItem.productNameZh}</span>}</p>
+              <div className="space-y-2">
+                <Label>الكمية المشحونة</Label>
+                <Input autoFocus type="number" min="1" value={editItemQty} onChange={(e) => setEditItemQty(e.target.value)} data-testid="input-edit-container-item-qty" />
+              </div>
+              <Button className="w-full" onClick={() => updateContainerItemMutation.mutate({ id: editingContainerItem.id, quantity: parseInt(editItemQty) || 1 })} disabled={updateContainerItemMutation.isPending} data-testid="button-save-container-item">
+                {updateContainerItemMutation.isPending ? "جاري الحفظ..." : "حفظ التعديل"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deletingContainerItem} onOpenChange={(open) => { if (!open) setDeletingContainerItem(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف منتج من الحاوية</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف {deletingContainerItem?.productName} من الحاوية؟ سيتم إعادة {deletingContainerItem?.quantity} وحدة للمخزون تلقائياً.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingContainerItem && deleteContainerItemMutation.mutate(deletingContainerItem.id)} disabled={deleteContainerItemMutation.isPending}>
+              {deleteContainerItemMutation.isPending ? "جاري الحذف..." : "تأكيد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!deletingContainer} onOpenChange={(open) => { if (!open) setDeletingContainer(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف الحاوية</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف حاوية #{deletingContainer?.containerNumber || deletingContainer?.id}؟ سيتم إعادة البضاعة للمخزون تلقائياً.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingContainer && deleteContainerMutation.mutate(deletingContainer.id)} disabled={deleteContainerMutation.isPending}>
+              {deleteContainerMutation.isPending ? "جاري الحذف..." : "تأ��يد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!editContainer} onOpenChange={(open) => { if (!open) setEditContainer(null); }}>
         <DialogContent className="max-w-md">

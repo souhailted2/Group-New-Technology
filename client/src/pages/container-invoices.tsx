@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Printer, FileText, X, Save, Merge, Unlink } from "lucide-react";
+import { Printer, FileText, X, Save, Merge, Unlink, Search } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -32,6 +32,7 @@ export default function ContainerInvoices() {
   const [mergeDialogOpen, setMergeDialogOpen] = useState(false);
   const [selectedForMerge, setSelectedForMerge] = useState<number[]>([]);
   const [mergeInvoiceNumber, setMergeInvoiceNumber] = useState("");
+  const [searchDoc, setSearchDoc] = useState("");
 
   const { data: docs, isLoading } = useQuery<any[]>({
     queryKey: ["/api/container-documents"],
@@ -171,6 +172,22 @@ export default function ContainerInvoices() {
 
   const ungroupedDocs = docs?.filter(d => !d.groupInvoiceId) || [];
 
+  const filteredGroupedDocs = searchDoc.trim() ? groupedDocs.filter((entry: any) => {
+    const q = searchDoc.toLowerCase();
+    if (entry.type === "group") {
+      return entry.docs.some((doc: any) =>
+        (doc.invoiceNumber || "").toLowerCase().includes(q)
+        || (doc.containerNumber || "").toLowerCase().includes(q)
+        || (doc.invoice || "").toLowerCase().includes(q)
+      );
+    } else {
+      const doc = entry.doc;
+      return (doc.invoiceNumber || "").toLowerCase().includes(q)
+        || (doc.containerNumber || "").toLowerCase().includes(q)
+        || (doc.invoice || "").toLowerCase().includes(q);
+    }
+  }) : groupedDocs;
+
   return (
     <div className="p-3 sm:p-6 space-y-3 sm:space-y-4">
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -185,6 +202,17 @@ export default function ContainerInvoices() {
             <span className="hidden sm:inline">طباعة</span>
           </Button>
         </div>
+      </div>
+
+      <div className="relative w-64 mb-2">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          placeholder="بحث بالفاتورة أو رقم الحاوية..."
+          value={searchDoc}
+          onChange={(e) => setSearchDoc(e.target.value)}
+          className="pr-9"
+          data-testid="input-search-invoices"
+        />
       </div>
 
       <Card>
@@ -217,7 +245,7 @@ export default function ContainerInvoices() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  groupedDocs.map((entry, idx) => {
+                  filteredGroupedDocs.map((entry: any, idx: number) => {
                     if (entry.type === "group") {
                       return entry.docs.map((doc: any, docIdx: number) => (
                         <TableRow key={doc.id} className="bg-muted/30" data-testid={`row-doc-${doc.id}`}>

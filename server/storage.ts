@@ -57,6 +57,14 @@ export interface IStorage {
   deleteSupplier(id: number): Promise<void>;
   deleteCategory(id: number): Promise<void>;
   getSupplierAccount(supplierId: number): Promise<any>;
+  getAnnualInventory(year: number): Promise<any>;
+  deleteOrder(id: number): Promise<void>;
+  deleteOrderItem(id: number): Promise<void>;
+  deleteDelivery(id: number): Promise<void>;
+  updateDeliveryItem(id: number, data: any): Promise<any>;
+  deleteContainer(id: number): Promise<void>;
+  updateContainerItem(id: number, newQty: number): Promise<any>;
+  deleteContainerItem(id: number): Promise<void>;
   getShippingCompanyAccount(companyId: number): Promise<any>;
   getDashboardSummary(): Promise<any>;
   createPayment(data: InsertPayment): Promise<Payment>;
@@ -343,6 +351,7 @@ export class DatabaseStorage implements IStorage {
             : [];
           result.push({
             ...item,
+            quantityOrdered: prods[0].quantity,
             productName: prods[0].name,
             productNameZh: prods[0].nameZh || null,
             productStatus: prods[0].status,
@@ -381,49 +390,31 @@ export class DatabaseStorage implements IStorage {
       const receivedQty = item.quantity || 0;
       const remaining = orderedQty - receivedQty;
 
-      const newStatus = prod.status === "semi_manufactured" ? "semi_manufactured" : "received";
-      await db.update(products)
-        .set({ status: newStatus, statusChangedAt: new Date(), quantity: receivedQty })
-        .where(eq(products.id, item.productId));
-
-      if (item.parts && Array.isArray(item.parts) && prod.status === "semi_manufactured") {
-        await db.delete(productParts).where(eq(productParts.productId, item.productId));
-        for (const part of item.parts) {
-          if (!part.name) continue;
-          await db.insert(productParts).values({
-            productId: item.productId,
-            name: part.name,
-            quantity: part.quantity || 0,
-            length: part.length || null,
-            width: part.width || null,
-            height: part.height || null,
-            weight: part.weight || null,
-            piecesPerCarton: part.piecesPerCarton || null,
-          });
-        }
-      }
-
       if (remaining > 0) {
-        const [newProd] = await db.insert(products).values({
-          name: prod.name,
-          quantity: remaining,
-          categoryId: prod.categoryId,
-          status: "ordered",
-          statusChangedAt: new Date(),
-        }).returning();
+        // Partial delivery - keep product as "ordered" with remaining quantity
+        await db.update(products)
+          .set({ quantity: remaining })
+          .where(eq(products.id, item.productId));
+      } else {
+        // Full delivery - mark as received
+        const newStatus = prod.status === "semi_manufactured" ? "semi_manufactured" : "received";
+        await db.update(products)
+          .set({ status: newStatus, statusChangedAt: new Date(), quantity: receivedQty })
+          .where(eq(products.id, item.productId));
 
-        if (prod.status === "semi_manufactured") {
-          const existingParts = await db.select().from(productParts).where(eq(productParts.productId, item.productId));
-          for (const part of existingParts) {
+        if (item.parts && Array.isArray(item.parts) && prod.status === "semi_manufactured") {
+          await db.delete(productParts).where(eq(productParts.productId, item.productId));
+          for (const part of item.parts) {
+            if (!part.name) continue;
             await db.insert(productParts).values({
-              productId: newProd.id,
+              productId: item.productId,
               name: part.name,
-              quantity: part.quantity,
-              length: part.length,
-              width: part.width,
-              height: part.height,
-              weight: part.weight,
-              piecesPerCarton: part.piecesPerCarton,
+              quantity: part.quantity || 0,
+              length: part.length || null,
+              width: part.width || null,
+              height: part.height || null,
+              weight: part.weight || null,
+              piecesPerCarton: part.piecesPerCarton || null,
             });
           }
         }
@@ -604,15 +595,20 @@ export class DatabaseStorage implements IStorage {
 
   async getSupplierAccount(supplierId: number): Promise<any> {
     const allDeliveries = await db.select().from(deliveries)
-      .where(eq(deliveries.supplierId, supplierId));
+      .where(eq(deliveries.supplierId, supplierId))
+      .orderBy(deliveries.createdAt);
 
-    const allDeliveryItems = [];
     let totalCNY = 0;
     let totalUSD = 0;
+
+    const groupedDeliveries = [];
 
     for (const del of allDeliveries) {
       const items = await db.select().from(deliveryItems)
         .where(eq(deliveryItems.deliveryId, del.id));
+      const enrichedItems = [];
+      let deliveryCNY = 0;
+      let deliveryUSD = 0;
       for (const item of items) {
         const prods = await db.select().from(products).where(eq(products.id, item.productId));
         const enriched = {
@@ -620,9 +616,19 @@ export class DatabaseStorage implements IStorage {
           productName: prods[0]?.name || `منتج #${item.productId}`,
           productNameZh: prods[0]?.nameZh || null,
         };
-        allDeliveryItems.push(enriched);
-        if (item.currency === "CNY") totalCNY += (item.price || 0) * item.quantity;
-        else totalUSD += (item.price || 0) * item.quantity;
+        enrichedItems.push(enriched);
+        if (item.currency === "CNY") { totalCNY += (item.price || 0) * item.quantity; deliveryCNY += (item.price || 0) * item.quantity; }
+        else { totalUSD += (item.price || 0) * item.quantity; deliveryUSD += (item.price || 0) * item.quantity; }
+      }
+      if (enrichedItems.length > 0) {
+        groupedDeliveries.push({
+          id: del.id,
+          createdAt: del.createdAt,
+          orderId: del.orderId,
+          totalCNY: deliveryCNY,
+          totalUSD: deliveryUSD,
+          items: enrichedItems,
+        });
       }
     }
 
@@ -641,9 +647,254 @@ export class DatabaseStorage implements IStorage {
       totalUSD,
       paidCNY,
       paidUSD,
-      deliveryItems: allDeliveryItems,
+      deliveries: groupedDeliveries,
       payments: allPayments,
     };
+  }
+
+
+  async getAnnualInventory(year: number): Promise<any> {
+    const startDate = new Date(year, 0, 1);
+    const endDate = new Date(year + 1, 0, 1);
+    const startISO = startDate.toISOString();
+    const endISO = endDate.toISOString();
+
+    // All products + categories
+    const allProducts = await db.select().from(products);
+    const allCategories = await db.select().from(categories);
+    const catMap: Record<number, string> = {};
+    for (const cat of allCategories) catMap[cat.id] = cat.name;
+
+    // Deliveries this year
+    const yearDeliveries = await db.select().from(deliveries)
+      .where(and(sql`${deliveries.createdAt} >= ${startISO}::timestamp`, sql`${deliveries.createdAt} < ${endISO}::timestamp`));
+
+    // Delivery items aggregated by product
+    const deliveredByProduct: Record<number, number> = {};
+    for (const del of yearDeliveries) {
+      const items = await db.select().from(deliveryItems).where(eq(deliveryItems.deliveryId, del.id));
+      for (const item of items) {
+        deliveredByProduct[item.productId] = (deliveredByProduct[item.productId] || 0) + item.quantity;
+      }
+    }
+
+    // Containers this year
+    const yearContainers = await db.select().from(containers)
+      .where(and(sql`${containers.createdAt} >= ${startISO}::timestamp`, sql`${containers.createdAt} < ${endISO}::timestamp`));
+
+    // Container items aggregated by product
+    const shippedByProduct: Record<number, number> = {};
+    for (const cont of yearContainers) {
+      const items = await db.select().from(containerItems).where(eq(containerItems.containerId, cont.id));
+      for (const item of items) {
+        shippedByProduct[item.productId] = (shippedByProduct[item.productId] || 0) + item.quantity;
+      }
+    }
+
+    // Product summary (only products with any activity)
+    const productSummary = allProducts
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        categoryName: p.categoryId ? (catMap[p.categoryId] || null) : null,
+        deliveredQty: deliveredByProduct[p.id] || 0,
+        shippedQty: shippedByProduct[p.id] || 0,
+        currentStock: p.quantity,
+      }))
+      .filter(p => p.deliveredQty > 0 || p.shippedQty > 0 || p.currentStock > 0);
+
+    // Supplier summary
+    const allSuppliers = await db.select().from(suppliers);
+    const supplierSummary = [];
+
+    for (const sup of allSuppliers) {
+      // This year deliveries for this supplier
+      const supYearDeliveries = yearDeliveries.filter(d => d.supplierId === sup.id);
+      let deliveredYearCNY = 0, deliveredYearUSD = 0;
+      for (const del of supYearDeliveries) {
+        const items = await db.select().from(deliveryItems).where(eq(deliveryItems.deliveryId, del.id));
+        for (const item of items) {
+          if (item.currency === "CNY") deliveredYearCNY += (item.price || 0) * item.quantity;
+          else deliveredYearUSD += (item.price || 0) * item.quantity;
+        }
+      }
+
+      // This year payments for this supplier
+      const yearPays = await db.select().from(payments)
+        .where(and(eq(payments.supplierId, sup.id), sql`${payments.createdAt} >= ${startISO}::timestamp`, sql`${payments.createdAt} < ${endISO}::timestamp`));
+      let paidYearCNY = 0, paidYearUSD = 0;
+      for (const p of yearPays) {
+        if (p.currency === "CNY") paidYearCNY += p.amount;
+        else paidYearUSD += p.amount;
+      }
+
+      // All-time totals for balance
+      const allSupDeliveries = await db.select().from(deliveries).where(eq(deliveries.supplierId, sup.id));
+      let totalDelivCNY = 0, totalDelivUSD = 0;
+      for (const del of allSupDeliveries) {
+        const items = await db.select().from(deliveryItems).where(eq(deliveryItems.deliveryId, del.id));
+        for (const item of items) {
+          if (item.currency === "CNY") totalDelivCNY += (item.price || 0) * item.quantity;
+          else totalDelivUSD += (item.price || 0) * item.quantity;
+        }
+      }
+      const allSupPays = await db.select().from(payments).where(eq(payments.supplierId, sup.id));
+      let totalPaidCNY = 0, totalPaidUSD = 0;
+      for (const p of allSupPays) {
+        if (p.currency === "CNY") totalPaidCNY += p.amount;
+        else totalPaidUSD += p.amount;
+      }
+
+      // Only include suppliers that have any deliveries ever
+      if (totalDelivCNY > 0 || totalDelivUSD > 0 || supYearDeliveries.length > 0) {
+        supplierSummary.push({
+          id: sup.id,
+          name: sup.name,
+          deliveryCountYear: supYearDeliveries.length,
+          deliveredYearCNY,
+          deliveredYearUSD,
+          paidYearCNY,
+          paidYearUSD,
+          totalDelivCNY,
+          totalDelivUSD,
+          totalPaidCNY,
+          totalPaidUSD,
+          balanceCNY: totalDelivCNY - totalPaidCNY,
+          balanceUSD: totalDelivUSD - totalPaidUSD,
+        });
+      }
+    }
+
+    // Financial summary for the year
+    const allYearPays = await db.select().from(payments)
+      .where(and(sql`${payments.createdAt} >= ${startISO}::timestamp`, sql`${payments.createdAt} < ${endISO}::timestamp`));
+    let supPayCNY = 0, supPayUSD = 0;
+    for (const p of allYearPays) {
+      if (p.currency === "CNY") supPayCNY += p.amount; else supPayUSD += p.amount;
+    }
+
+    const allYearShipPays = await db.select().from(shippingPayments)
+      .where(and(sql`${shippingPayments.createdAt} >= ${startISO}::timestamp`, sql`${shippingPayments.createdAt} < ${endISO}::timestamp`));
+    let shipPayCNY = 0, shipPayUSD = 0;
+    for (const p of allYearShipPays) {
+      if (p.currency === "CNY") shipPayCNY += p.amount; else shipPayUSD += p.amount;
+    }
+
+    const allYearExp = await db.select().from(expenses)
+      .where(and(sql`${expenses.createdAt} >= ${startISO}::timestamp`, sql`${expenses.createdAt} < ${endISO}::timestamp`));
+    let expCNY = 0, expUSD = 0;
+    for (const e of allYearExp) {
+      if (e.currency === "CNY") expCNY += e.amount; else expUSD += e.amount;
+    }
+
+    const allYearCashbox = await db.select().from(cashboxTransactions)
+      .where(and(sql`${cashboxTransactions.createdAt} >= ${startISO}::timestamp`, sql`${cashboxTransactions.createdAt} < ${endISO}::timestamp`));
+    let cashInCNY = 0, cashInUSD = 0, cashOutCNY = 0, cashOutUSD = 0;
+    for (const t of allYearCashbox) {
+      if (t.type === "income") {
+        if (t.currency === "CNY") cashInCNY += t.amount; else cashInUSD += t.amount;
+      } else {
+        if (t.currency === "CNY") cashOutCNY += t.amount; else cashOutUSD += t.amount;
+      }
+    }
+
+    return {
+      year,
+      productSummary,
+      supplierSummary,
+      financialSummary: {
+        supplierPaymentsCNY: supPayCNY,
+        supplierPaymentsUSD: supPayUSD,
+        shippingPaymentsCNY: shipPayCNY,
+        shippingPaymentsUSD: shipPayUSD,
+        expensesCNY: expCNY,
+        expensesUSD: expUSD,
+        cashboxIncomeCNY: cashInCNY,
+        cashboxIncomeUSD: cashInUSD,
+        cashboxExpenseCNY: cashOutCNY,
+        cashboxExpenseUSD: cashOutUSD,
+      },
+    };
+  }
+
+
+  async deleteOrder(id: number): Promise<void> {
+    await db.delete(orderItems).where(eq(orderItems.orderId, id));
+    await db.delete(orders).where(eq(orders.id, id));
+  }
+
+  async deleteOrderItem(id: number): Promise<void> {
+    await db.delete(orderItems).where(eq(orderItems.id, id));
+  }
+
+  async deleteDelivery(id: number): Promise<void> {
+    const items = await db.select().from(deliveryItems).where(eq(deliveryItems.deliveryId, id));
+    for (const item of items) {
+      const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
+      if (prod) {
+        const newQty = Math.max(0, (prod.quantity || 0) - (item.quantity || 0));
+        await db.update(products).set({ quantity: newQty }).where(eq(products.id, item.productId));
+      }
+    }
+    await db.delete(deliveryItems).where(eq(deliveryItems.deliveryId, id));
+    await db.delete(deliveries).where(eq(deliveries.id, id));
+  }
+
+  async updateDeliveryItem(id: number, data: any): Promise<any> {
+    const [existing] = await db.select().from(deliveryItems).where(eq(deliveryItems.id, id));
+    if (!existing) return null;
+    const updateData: any = {};
+    if (data.price !== undefined) updateData.price = data.price;
+    if (data.currency !== undefined) updateData.currency = data.currency;
+    if (data.quantity !== undefined) {
+      updateData.quantity = data.quantity;
+      const qtyDiff = data.quantity - existing.quantity;
+      const [prod] = await db.select().from(products).where(eq(products.id, existing.productId));
+      if (prod) {
+        const newQty = Math.max(0, (prod.quantity || 0) + qtyDiff);
+        await db.update(products).set({ quantity: newQty }).where(eq(products.id, existing.productId));
+      }
+    }
+    const [updated] = await db.update(deliveryItems).set(updateData).where(eq(deliveryItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteContainer(id: number): Promise<void> {
+    const items = await db.select().from(containerItems).where(eq(containerItems.containerId, id));
+    for (const item of items) {
+      const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
+      if (prod) {
+        const newQty = (prod.quantity || 0) + (item.quantity || 0);
+        await db.update(products).set({ quantity: newQty, status: "received", statusChangedAt: new Date() }).where(eq(products.id, item.productId));
+      }
+    }
+    await db.delete(containerItems).where(eq(containerItems.containerId, id));
+    await db.delete(containerDocuments).where(eq(containerDocuments.containerId, id));
+    await db.delete(containers).where(eq(containers.id, id));
+  }
+
+  async updateContainerItem(id: number, newQty: number): Promise<any> {
+    const [item] = await db.select().from(containerItems).where(eq(containerItems.id, id));
+    if (!item) return null;
+    const diff = newQty - item.quantity;
+    const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
+    if (prod) {
+      const newProdQty = (prod.quantity || 0) - diff;
+      await db.update(products).set({ quantity: Math.max(0, newProdQty) }).where(eq(products.id, item.productId));
+    }
+    const [updated] = await db.update(containerItems).set({ quantity: newQty }).where(eq(containerItems.id, id)).returning();
+    return updated;
+  }
+
+  async deleteContainerItem(id: number): Promise<void> {
+    const [item] = await db.select().from(containerItems).where(eq(containerItems.id, id));
+    if (!item) return;
+    const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
+    if (prod) {
+      const newQty = (prod.quantity || 0) + (item.quantity || 0);
+      await db.update(products).set({ quantity: newQty, status: "received", statusChangedAt: new Date() }).where(eq(products.id, item.productId));
+    }
+    await db.delete(containerItems).where(eq(containerItems.id, id));
   }
 
   async getShippingCompanyAccount(companyId: number): Promise<any> {

@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { SearchCombobox } from "@/components/search-combobox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Wallet, CreditCard, Printer, Pencil, Trash2, ArrowRightLeft, Plus, Ship } from "lucide-react";
+import { Wallet, CreditCard, Printer, Pencil, Trash2, ArrowRightLeft, Plus, Ship, Search } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import type { ShippingCompany } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -57,6 +58,7 @@ export default function ShippingAccounts() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertPayment, setConvertPayment] = useState<any>(null);
   const [convertRate, setConvertRate] = useState("");
+
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: companies } = useQuery<ShippingCompany[]>({
@@ -275,16 +277,15 @@ export default function ShippingAccounts() {
 
       <div className="space-y-2">
         <Label>اختر شركة الشحن</Label>
-        <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-          <SelectTrigger className="max-w-sm" data-testid="select-shipping-company">
-            <SelectValue placeholder="اختر شركة الشحن لعرض حسابها" />
-          </SelectTrigger>
-          <SelectContent>
-            {companies?.map((c) => (
-              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchCombobox
+          selectedId={selectedCompany}
+          onSelect={(id) => setSelectedCompany(id)}
+          options={companies || []}
+          placeholder="اكتب لاختيار شركة الشحن..."
+          inputTestId="input-search-shipping-company"
+          optionTestIdPrefix="option-account-company"
+          className="max-w-sm"
+        />
       </div>
 
       {selectedCompany && (

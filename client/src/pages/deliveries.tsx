@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SearchCombobox } from "@/components/search-combobox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,11 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Truck, Printer, Layers, Plus, Trash2, ChevronDown, ChevronUp } from "lucide-react";
+import { Truck, Printer, Layers, Plus, Trash2, Pencil, ChevronDown, ChevronUp, Search } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/App";
 import { useLanguage } from "@/lib/language-context";
 import { t } from "@/lib/translations";
@@ -58,12 +63,15 @@ export default function Deliveries() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const hidePrice = user?.role === "warehouse";
+  const isAdmin = user?.role === "admin";
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const [items, setItems] = useState<DeliveryItemDraft[]>([]);
   const [step, setStep] = useState<"supplier" | "items" | "summary">("supplier");
   const [expandedParts, setExpandedParts] = useState<number[]>([]);
+
 
   const { data: suppliers } = useQuery<Supplier[]>({
     queryKey: ["/api/suppliers"],
@@ -84,7 +92,7 @@ export default function Deliveries() {
         productName: item.productName,
         productNameZh: item.productNameZh || null,
         productStatus: item.productStatus || "ordered",
-        selected: true,
+        selected: false,
         quantity: item.quantityOrdered,
         price: item.price,
         currency: item.currency,
@@ -124,6 +132,7 @@ export default function Deliveries() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
       queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
       setDialogOpen(false);
       resetForm();
       toast({ title: "تم تأكيد التسليم بنجاح" });
@@ -253,16 +262,17 @@ export default function Deliveries() {
               <div className="space-y-4 pt-4">
                 <div className="space-y-2">
                   <Label>المورد</Label>
-                  <Select value={supplierId} onValueChange={setSupplierId}>
-                    <SelectTrigger data-testid="select-delivery-supplier">
-                      <SelectValue placeholder={t("deliveries.selectSupplier", language)} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers?.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <SearchCombobox
+                    selectedId={supplierId}
+                    onSelect={(id) => setSupplierId(id)}
+                    options={suppliers || []}
+                    placeholder="اكتب لاختيار المورد..."
+                    inputTestId="input-search-delivery-supplier"
+                    optionTestIdPrefix="option-supplier"
+                  />
+                  {supplierId && (
+                    <p className="text-xs text-green-600 mt-1">✓ {(suppliers || []).find(s => String(s.id) === supplierId)?.name}</p>
+                  )}
                 </div>
                 <Button
                   data-testid="button-fetch-orders"
@@ -297,6 +307,16 @@ export default function Deliveries() {
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    <div className="relative">
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        className="pr-9"
+                        placeholder="بحث في السلع..."
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        data-testid="input-search-delivery-products"
+                      />
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
                         <thead>
@@ -315,7 +335,7 @@ export default function Deliveries() {
                           </tr>
                         </thead>
                         <tbody>
-                          {items.map((item, idx) => (
+                          {items.map((item, idx) => ({ item, idx })).filter(({ item }) => !productSearch.trim() || item.productName.toLowerCase().includes(productSearch.toLowerCase()) || (item.productNameZh || "").toLowerCase().includes(productSearch.toLowerCase())).map(({ item, idx }) => (
                             <>
                               <tr key={item.productId} className={`border-b ${!item.selected ? "opacity-40" : ""}`}>
                                 <td className="p-1">
@@ -611,9 +631,71 @@ function DeliveriesHistory() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const hidePrice = user?.role === "warehouse";
+  const isAdmin = user?.role === "admin";
+  const [searchDelivery, setSearchDelivery] = useState("");
+  const [deletingDelivery, setDeletingDelivery] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editQty, setEditQty] = useState("");
+  const [editPrice, setEditPrice] = useState("");
+  const [editCurrency, setEditCurrency] = useState("CNY");
+  const { toast } = useToast();
+
   const { data: deliveriesList, isLoading } = useQuery<any[]>({
     queryKey: ["/api/deliveries"],
   });
+
+  const deleteDeliveryMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", `/api/deliveries/${id}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      setDeletingDelivery(null);
+      toast({ title: "تم حذف التسليم وتصحيح المخزون" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateDeliveryItemMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/delivery-items/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/deliveries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
+      setEditingItem(null);
+      toast({ title: "تم تحديث البند بنجاح" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "خطأ", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openItemEdit = (item: any) => {
+    setEditingItem(item);
+    setEditQty(String(item.quantity));
+    setEditPrice(String(item.price || 0));
+    setEditCurrency(item.currency || "CNY");
+  };
+
+  const saveItemEdit = () => {
+    if (!editingItem) return;
+    updateDeliveryItemMutation.mutate({
+      id: editingItem.id,
+      data: {
+        quantity: parseInt(editQty) || editingItem.quantity,
+        price: parseFloat(editPrice) || 0,
+        currency: editCurrency,
+      },
+    });
+  };
 
   if (isLoading) {
     return (
@@ -640,19 +722,42 @@ function DeliveriesHistory() {
     );
   }
 
+  const filteredDeliveries = (deliveriesList || []).filter((d: any) =>
+    !searchDelivery.trim() || (d.supplierName || "").toLowerCase().includes(searchDelivery.toLowerCase())
+  );
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">{t("deliveries.deliveryHistory", language)}</h2>
-      {deliveriesList.map((delivery: any) => (
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h2 className="text-lg font-semibold">{t("deliveries.deliveryHistory", language)}</h2>
+        <div className="relative w-64">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="بحث بالمورد..."
+            value={searchDelivery}
+            onChange={(e) => setSearchDelivery(e.target.value)}
+            className="pr-9"
+            data-testid="input-search-deliveries-history"
+          />
+        </div>
+      </div>
+      {filteredDeliveries.map((delivery: any) => (
         <Card key={delivery.id} data-testid={`card-delivery-${delivery.id}`}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <CardTitle className="text-base">
                 تسليم #{delivery.id} - {delivery.supplierName || "مورد"}
               </CardTitle>
-              <Badge variant="secondary">
-                {delivery.warehouseName || "مخزن"}
-              </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">
+                  {delivery.warehouseName || "مخزن"}
+                </Badge>
+                {isAdmin && (
+                  <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7" onClick={() => setDeletingDelivery(delivery)} data-testid={`button-delete-delivery-${delivery.id}`}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">
               {delivery.createdAt ? new Date(delivery.createdAt).toLocaleDateString("fr-FR") : ""}
@@ -668,11 +773,12 @@ function DeliveriesHistory() {
                     <TableHead>{t("common.quantity", language)}</TableHead>
                     {!hidePrice && <TableHead>السعر</TableHead>}
                     {!hidePrice && <TableHead>العملة</TableHead>}
+                    {isAdmin && <TableHead></TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {delivery.items.map((item: any) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} data-testid={`row-delivery-item-${item.id}`}>
                       <TableCell>
                         <div>
                           <span>{item.productName || `منتج #${item.productId}`}</span>
@@ -684,6 +790,11 @@ function DeliveriesHistory() {
                       <TableCell>{item.quantity}</TableCell>
                       {!hidePrice && <TableCell>{item.price?.toFixed(2)}</TableCell>}
                       {!hidePrice && <TableCell>{item.currency === "CNY" ? "يوان" : "دولار"}</TableCell>}
+                      {isAdmin && <TableCell>
+                        <Button size="icon" variant="ghost" onClick={() => openItemEdit(item)} data-testid={`button-edit-delivery-item-${item.id}`}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -693,6 +804,59 @@ function DeliveriesHistory() {
           )}
         </Card>
       ))}
+
+      <AlertDialog open={!!deletingDelivery} onOpenChange={(open) => { if (!open) setDeletingDelivery(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف التسليم</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف تسليم #{deletingDelivery?.id} للمورد {deletingDelivery?.supplierName}؟ سيتم عكس الكميات في المخزون تلقائياً.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>إلغاء</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deletingDelivery && deleteDeliveryMutation.mutate(deletingDelivery.id)} disabled={deleteDeliveryMutation.isPending}>
+              {deleteDeliveryMutation.isPending ? "جاري الحذف..." : "تأكيد الحذف"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!editingItem} onOpenChange={(open) => { if (!open) setEditingItem(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>تعديل بند التسليم</DialogTitle>
+          </DialogHeader>
+          {editingItem && (
+            <div className="space-y-4 pt-4">
+              <p className="text-sm text-muted-foreground font-medium">{editingItem.productName}{editingItem.productNameZh && <span className="block" dir="ltr">{editingItem.productNameZh}</span>}</p>
+              <div className="space-y-2">
+                <Label>الكمية</Label>
+                <Input autoFocus data-testid="input-edit-delivery-qty" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
+              </div>
+              {!hidePrice && <div className="space-y-2">
+                <Label>السعر</Label>
+                <Input data-testid="input-edit-delivery-price" type="number" step="0.01" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} />
+              </div>}
+              {!hidePrice && <div className="space-y-2">
+                <Label>العملة</Label>
+                <Select value={editCurrency} onValueChange={setEditCurrency}>
+                  <SelectTrigger data-testid="select-edit-delivery-currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CNY">يوان صيني</SelectItem>
+                    <SelectItem value="USD">دولار أمريكي</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>}
+              <Button className="w-full" onClick={saveItemEdit} disabled={updateDeliveryItemMutation.isPending} data-testid="button-save-edit-delivery-item">
+                {updateDeliveryItemMutation.isPending ? "جاري الحفظ..." : "حفظ التعديل"}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

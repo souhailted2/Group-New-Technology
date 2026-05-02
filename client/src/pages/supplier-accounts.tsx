@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { SearchCombobox } from "@/components/search-combobox";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Wallet, CreditCard, Printer, Pencil, Trash2, ArrowRightLeft } from "lucide-react";
+import { Wallet, CreditCard, Printer, Pencil, Trash2, ArrowRightLeft, Search } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import type { Supplier } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,6 +54,7 @@ export default function SupplierAccounts() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertPayment, setConvertPayment] = useState<any>(null);
   const [convertRate, setConvertRate] = useState("");
+
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: suppliers } = useQuery<Supplier[]>({
@@ -221,16 +223,15 @@ export default function SupplierAccounts() {
 
       <div className="space-y-2">
         <Label>اختر المورد</Label>
-        <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
-          <SelectTrigger className="max-w-sm" data-testid="select-account-supplier">
-            <SelectValue placeholder="اختر المورد لعرض حسابه" />
-          </SelectTrigger>
-          <SelectContent>
-            {suppliers?.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <SearchCombobox
+          selectedId={selectedSupplier}
+          onSelect={(id) => setSelectedSupplier(id)}
+          options={suppliers || []}
+          placeholder="اكتب لاختيار المورد..."
+          inputTestId="input-search-account-supplier"
+          optionTestIdPrefix="option-account-supplier"
+          className="max-w-sm"
+        />
       </div>
 
       {selectedSupplier && (
@@ -354,42 +355,69 @@ export default function SupplierAccounts() {
                 </Dialog>
               </div>
 
-              {accountData.deliveryItems && accountData.deliveryItems.length > 0 ? (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="overflow-x-auto">
-                    <Table className="min-w-[600px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>المنتج</TableHead>
-                          <TableHead>الكمية</TableHead>
-                          <TableHead>السعر</TableHead>
-                          <TableHead>العملة</TableHead>
-                          <TableHead>المجموع</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {accountData.deliveryItems.map((item: any, idx: number) => (
-                          <TableRow key={idx}>
-                            <TableCell className="font-medium">
-                              <div>
-                                <span>{item.productName}</span>
-                                {item.productNameZh && (
-                                  <span className="block text-sm text-muted-foreground" dir="ltr">{item.productNameZh}</span>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>{item.price?.toFixed(2)}</TableCell>
-                            <TableCell>{item.currency === "CNY" ? "يوان" : "دولار"}</TableCell>
-                            <TableCell className="font-semibold">{(item.price * item.quantity).toFixed(2)}</TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    </div>
-                  </CardContent>
-                </Card>
+              {accountData.deliveries && accountData.deliveries.length > 0 ? (
+                <div className="space-y-4">
+                  {accountData.deliveries.map((delivery: any) => (
+                    <Card key={delivery.id} data-testid={`card-delivery-${delivery.id}`}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <CardTitle className="text-base font-semibold">
+                            فاتورة #{delivery.id}
+                            {delivery.orderId && (
+                              <span className="text-sm font-normal text-muted-foreground mr-2">(طلبية #{delivery.orderId})</span>
+                            )}
+                          </CardTitle>
+                          <div className="flex items-center gap-3 text-sm">
+                            <span className="text-muted-foreground">{formatDateFr(delivery.createdAt)}</span>
+                            {delivery.totalCNY > 0 && (
+                              <Badge variant="outline" className="font-semibold" data-testid={`text-delivery-cny-${delivery.id}`}>
+                                {delivery.totalCNY.toFixed(2)} CNY
+                              </Badge>
+                            )}
+                            {delivery.totalUSD > 0 && (
+                              <Badge variant="outline" className="font-semibold" data-testid={`text-delivery-usd-${delivery.id}`}>
+                                {delivery.totalUSD.toFixed(2)} USD
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-0">
+                        <div className="overflow-x-auto">
+                          <Table className="min-w-[500px]">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>المنتج</TableHead>
+                                <TableHead>الكمية</TableHead>
+                                <TableHead>السعر</TableHead>
+                                <TableHead>العملة</TableHead>
+                                <TableHead>المجموع</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {delivery.items.map((item: any) => (
+                                <TableRow key={item.id} data-testid={`row-delivery-item-${item.id}`}>
+                                  <TableCell className="font-medium">
+                                    <div>
+                                      <span>{item.productName}</span>
+                                      {item.productNameZh && (
+                                        <span className="block text-sm text-muted-foreground" dir="ltr">{item.productNameZh}</span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>{item.quantity}</TableCell>
+                                  <TableCell>{item.price?.toFixed(2)}</TableCell>
+                                  <TableCell>{item.currency === "CNY" ? "يوان" : "دولار"}</TableCell>
+                                  <TableCell className="font-semibold">{(item.price * item.quantity).toFixed(2)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               ) : (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-8 text-center">

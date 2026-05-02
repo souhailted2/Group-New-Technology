@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Printer, Pencil, Trash2, ArrowRightLeft, Plus, TrendingUp, TrendingDown, Landmark, Link, Truck, Building2 } from "lucide-react";
+import { Printer, Pencil, Trash2, ArrowRightLeft, Plus, TrendingUp, TrendingDown, Landmark, Link, Truck, Building2, Search } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -68,6 +68,7 @@ export default function Cashbox() {
   const [shpDescription, setShpDescription] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterCurrency, setFilterCurrency] = useState("all");
+  const [searchTxn, setSearchTxn] = useState("");
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: transactions, isLoading: txnsLoading } = useQuery<any[]>({
@@ -286,6 +287,14 @@ export default function Cashbox() {
   const filteredTransactions = (transactions || []).filter((txn: any) => {
     if (filterType !== "all" && txn.type !== filterType) return false;
     if (filterCurrency !== "all" && txn.currency !== filterCurrency) return false;
+    if (searchTxn.trim()) {
+      const q = searchTxn.toLowerCase();
+      const matchDesc = (txn.description || "").toLowerCase().includes(q);
+      const matchAmount = String(txn.amount || "").includes(q);
+      const matchCategory = (txn.category || "").toLowerCase().includes(q);
+      const matchParty = (txn.partyName || txn.supplierName || txn.shippingCompanyName || "").toLowerCase().includes(q);
+      if (!matchDesc && !matchAmount && !matchCategory && !matchParty) return false;
+    }
     return true;
   });
 
@@ -666,6 +675,16 @@ export default function Cashbox() {
       ) : null}
 
       <div className="flex items-center gap-4 flex-wrap">
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            data-testid="input-search-transactions"
+            placeholder="بحث في المعاملات..."
+            value={searchTxn}
+            onChange={(e) => setSearchTxn(e.target.value)}
+            className="pr-9 w-56"
+          />
+        </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">نوع العملية</Label>
           <Select value={filterType} onValueChange={setFilterType}>

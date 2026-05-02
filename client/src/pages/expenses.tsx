@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Printer, Pencil, Trash2, Plus, Receipt, TrendingDown } from "lucide-react";
+import { Printer, Pencil, Trash2, Plus, Receipt, TrendingDown, Search } from "lucide-react";
 import { openPrintWindow } from "@/lib/printStyles";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -52,6 +52,7 @@ export default function Expenses() {
   const [editDescription, setEditDescription] = useState("");
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [filterCurrency, setFilterCurrency] = useState("all");
+  const [searchExpense, setSearchExpense] = useState("");
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: expenses, isLoading } = useQuery<Expense[]>({
@@ -151,6 +152,14 @@ export default function Expenses() {
 
   const filteredExpenses = (expenses || []).filter((exp: any) => {
     if (filterCurrency !== "all" && exp.currency !== filterCurrency) return false;
+    if (searchExpense.trim()) {
+      const q = searchExpense.toLowerCase();
+      const matchTitle = (exp.title || "").toLowerCase().includes(q);
+      const matchDesc = (exp.description || "").toLowerCase().includes(q);
+      const matchAmount = String(exp.amount || "").includes(q);
+      const matchSupplier = (exp.supplierName || "").toLowerCase().includes(q);
+      if (!matchTitle && !matchDesc && !matchAmount && !matchSupplier) return false;
+    }
     return true;
   });
 
@@ -290,6 +299,16 @@ export default function Expenses() {
       )}
 
       <div className="flex items-center gap-4 flex-wrap">
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            data-testid="input-search-expenses"
+            placeholder="بحث في المصاريف..."
+            value={searchExpense}
+            onChange={(e) => setSearchExpense(e.target.value)}
+            className="pr-9 w-56"
+          />
+        </div>
         <div className="space-y-1">
           <Label className="text-xs text-muted-foreground">العملة</Label>
           <Select value={filterCurrency} onValueChange={setFilterCurrency}>

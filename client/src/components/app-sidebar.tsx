@@ -15,6 +15,7 @@ import {
   Landmark,
   Receipt,
   FileText,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/App";
 import { useLanguage } from "@/lib/language-context";
@@ -49,6 +50,7 @@ const operationItems = [
 ];
 
 const financeItems = [
+  { titleKey: "جرد السنة", url: "/annual-inventory", icon: ClipboardList },
   { titleKey: "صندوق الحسابات", url: "/cashbox", icon: Landmark },
   { titleKey: "صندوق المصاريف", url: "/expenses", icon: Receipt },
   { titleKey: "حسابات الموردين", url: "/supplier-accounts", icon: Wallet },

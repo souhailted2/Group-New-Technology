@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, FolderOpen, Trash2, Pencil } from "lucide-react";
+import { Plus, FolderOpen, Trash2, Pencil, Search } from "lucide-react";
 import type { Category } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -29,6 +29,7 @@ export default function Categories() {
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [name, setName] = useState("");
   const [editName, setEditName] = useState("");
+  const [searchCategory, setSearchCategory] = useState("");
 
   const { data: categories, isLoading } = useQuery<Category[]>({
     queryKey: ["/api/categories"],
@@ -150,15 +151,26 @@ export default function Categories() {
         </Dialog>
       </div>
 
+      <div className="relative max-w-sm">
+        <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <Input
+          data-testid="input-search-categories"
+          placeholder="بحث في الفئات..."
+          value={searchCategory}
+          onChange={(e) => setSearchCategory(e.target.value)}
+          className="pr-9"
+        />
+      </div>
+
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
           {Array.from({ length: 3 }).map((_, i) => (
             <Card key={i}><CardContent className="p-6"><Skeleton className="h-6 w-32" /></CardContent></Card>
           ))}
         </div>
-      ) : categories && categories.length > 0 ? (
+      ) : (categories || []).filter(c => !searchCategory.trim() || c.name.toLowerCase().includes(searchCategory.toLowerCase())).length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
-          {categories.map((cat) => (
+          {(categories || []).filter(c => !searchCategory.trim() || c.name.toLowerCase().includes(searchCategory.toLowerCase())).map((cat) => (
             <Card key={cat.id} className="hover-elevate" data-testid={`card-category-${cat.id}`}>
               <CardContent className="flex items-center gap-3 p-6">
                 <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 shrink-0">

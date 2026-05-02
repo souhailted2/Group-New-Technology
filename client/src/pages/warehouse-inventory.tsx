@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Printer, Warehouse, Package, Layers } from "lucide-react";
+import { Printer, Warehouse, Package, Layers, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -25,6 +26,7 @@ const statusColors: Record<string, string> = {
 export default function WarehouseInventory() {
   const printRef = useRef<HTMLDivElement>(null);
   const { language } = useLanguage();
+  const [searchInventory, setSearchInventory] = useState("");
 
   const { data: inventory, isLoading } = useQuery<any[]>({
     queryKey: ["/api/warehouse-inventory"],
@@ -124,6 +126,17 @@ export default function WarehouseInventory() {
           </Card>
         </div>
 
+        <div className="relative max-w-sm">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            data-testid="input-search-inventory"
+            placeholder="بحث في المخزون..."
+            value={searchInventory}
+            onChange={(e) => setSearchInventory(e.target.value)}
+            className="pr-9"
+          />
+        </div>
+
         {!inventory || inventory.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-12 text-center">
@@ -149,7 +162,15 @@ export default function WarehouseInventory() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {inventory.map((item: any, idx: number) => {
+                  {(inventory || []).filter((item: any) => {
+                    if (!searchInventory.trim()) return true;
+                    const q = searchInventory.toLowerCase();
+                    return (item.name || "").toLowerCase().includes(q)
+                      || (item.nameZh || "").toLowerCase().includes(q)
+                      || (item.categoryName || "").toLowerCase().includes(q)
+                      || (item.supplierName || "").toLowerCase().includes(q)
+                      || (item.warehouseName || "").toLowerCase().includes(q);
+                  }).map((item: any, idx: number) => {
                     const hasParts = item.parts && item.parts.length > 0;
                     const itemWeight = hasParts
                       ? item.parts.reduce((s: number, p: any) => s + ((p.weight || 0) * (p.quantity || 0)), 0)

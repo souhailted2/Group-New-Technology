@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Warehouse, Pencil, Trash2 } from "lucide-react";
+import { Plus, Warehouse, Pencil, Trash2, Search } from "lucide-react";
 import type { Warehouse as WarehouseType } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLanguage } from "@/lib/language-context";
@@ -20,6 +20,7 @@ export default function Warehouses() {
   const [name, setName] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+  const [searchWarehouse, setSearchWarehouse] = useState("");
 
   const { data: warehouses, isLoading } = useQuery<WarehouseType[]>({
     queryKey: ["/api/warehouses"],
@@ -97,7 +98,18 @@ export default function Warehouses() {
           <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-warehouses-title">{t("warehouses.title", language)}</h1>
           <p className="text-muted-foreground">{t("warehouses.subtitle", language)}</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <div className="flex items-center gap-2">
+          <div className="relative w-56">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="بحث بالاسم..."
+              value={searchWarehouse}
+              onChange={(e) => setSearchWarehouse(e.target.value)}
+              className="pr-9"
+              data-testid="input-search-warehouses"
+            />
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-warehouse">
               <Plus className="h-4 w-4" />
@@ -129,6 +141,7 @@ export default function Warehouses() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {isLoading ? (
@@ -139,7 +152,7 @@ export default function Warehouses() {
         </div>
       ) : warehouses && warehouses.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
-          {warehouses.map((wh) => (
+          {warehouses.filter(wh => !searchWarehouse.trim() || wh.name.toLowerCase().includes(searchWarehouse.toLowerCase())).map((wh) => (
             <Card key={wh.id} data-testid={`card-warehouse-${wh.id}`}>
               <CardContent className="flex items-center justify-between gap-3 p-6">
                 <div className="flex items-center gap-3">

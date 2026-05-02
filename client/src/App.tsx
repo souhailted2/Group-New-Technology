@@ -25,6 +25,7 @@ import Arrivals from "@/pages/arrivals";
 import SupplierAccounts from "@/pages/supplier-accounts";
 import ShippingAccounts from "@/pages/shipping-accounts";
 import WarehouseInventory from "@/pages/warehouse-inventory";
+import AnnualInventory from "@/pages/annual-inventory";
 import Login from "@/pages/login";
 import UserManagement from "@/pages/user-management";
 import Cashbox from "@/pages/cashbox";
@@ -83,6 +84,7 @@ function Router() {
       <Route path="/supplier-accounts">{() => <AdminRoute component={SupplierAccounts} />}</Route>
       <Route path="/shipping-accounts">{() => <AdminRoute component={ShippingAccounts} />}</Route>
       <Route path="/warehouse-inventory" component={WarehouseInventory} />
+      <Route path="/annual-inventory">{() => <AdminRoute component={AnnualInventory} />}</Route>
       <Route path="/users">{() => <AdminRoute component={UserManagement} />}</Route>
       <Route path="/cashbox">{() => <AdminRoute component={Cashbox} />}</Route>
       <Route path="/expenses">{() => <AdminRoute component={Expenses} />}</Route>

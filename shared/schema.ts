@@ -94,6 +94,7 @@ export const deliveries = pgTable("deliveries", {
   orderId: integer("order_id").references(() => orders.id),
   supplierId: integer("supplier_id").references(() => suppliers.id).notNull(),
   warehouseId: integer("warehouse_id").references(() => warehouses.id).notNull(),
+  receivedAt: timestamp("received_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

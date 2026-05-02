@@ -45,7 +45,7 @@ export interface IStorage {
   updateOrderItem(itemId: number, data: any): Promise<any>;
   confirmOrder(id: number): Promise<Order>;
   getSupplierOrderedItems(supplierId: number): Promise<any[]>;
-  createDelivery(supplierId: number, warehouseId: number, items: any[]): Promise<Delivery>;
+  createDelivery(supplierId: number, warehouseId: number, items: any[], receivedAt?: Date): Promise<Delivery>;
   getDeliveries(): Promise<any[]>;
   getContainers(): Promise<any[]>;
   createContainer(data: any, items: any[]): Promise<Container>;
@@ -282,14 +282,12 @@ export class DatabaseStorage implements IStorage {
       const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
       if (prod) {
         const remaining = prod.quantity - item.quantityOrdered;
-        if (remaining <= 0) {
-          await db.update(products)
-            .set({ status: "ordered", statusChangedAt: new Date(), quantity: item.quantityOrdered })
-            .where(eq(products.id, item.productId));
-        } else {
-          await db.update(products)
-            .set({ status: "ordered", statusChangedAt: new Date(), quantity: item.quantityOrdered })
-            .where(eq(products.id, item.productId));
+        // Always mark the ordered portion as "ordered" with quantityOrdered
+        await db.update(products)
+          .set({ status: "ordered", statusChangedAt: new Date(), quantity: item.quantityOrdered })
+          .where(eq(products.id, item.productId));
+
+        if (remaining > 0) {
 
           const [newProd] = await db.insert(products).values({
             name: prod.name,
@@ -452,7 +450,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContainers(): Promise<any[]> {
-    const allContainers = await db.select().from(containers);
+    const allContainers = await db.select().from(containers).orderBy(desc(containers.createdAt));
     const result = [];
     for (const cont of allContainers) {
       const wh = cont.warehouseId ? await db.select().from(warehouses).where(eq(warehouses.id, cont.warehouseId)) : [];
@@ -820,6 +818,16 @@ export class DatabaseStorage implements IStorage {
 
 
   async deleteOrder(id: number): Promise<void> {
+    const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
+    for (const item of items) {
+      const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
+      if (prod && prod.status === "ordered") {
+        // Restore product back to purchase_order since the order is being cancelled
+        await db.update(products)
+          .set({ status: "purchase_order", statusChangedAt: new Date() })
+          .where(eq(products.id, item.productId));
+      }
+    }
     await db.delete(orderItems).where(eq(orderItems.orderId, id));
     await db.delete(orders).where(eq(orders.id, id));
   }
@@ -833,8 +841,18 @@ export class DatabaseStorage implements IStorage {
     for (const item of items) {
       const [prod] = await db.select().from(products).where(eq(products.id, item.productId));
       if (prod) {
-        const newQty = Math.max(0, (prod.quantity || 0) - (item.quantity || 0));
-        await db.update(products).set({ quantity: newQty }).where(eq(products.id, item.productId));
+        if (prod.status === "received") {
+          // Full delivery was completed — restore status to ordered, qty is already correct
+          await db.update(products)
+            .set({ status: "ordered", statusChangedAt: new Date() })
+            .where(eq(products.id, item.productId));
+        } else {
+          // Partial delivery — add back the delivered qty to restore original ordered qty
+          const restoredQty = (prod.quantity || 0) + (item.quantity || 0);
+          await db.update(products)
+            .set({ quantity: restoredQty })
+            .where(eq(products.id, item.productId));
+        }
       }
     }
     await db.delete(deliveryItems).where(eq(deliveryItems.deliveryId, id));
@@ -1163,7 +1181,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCashboxTransactions(): Promise<any[]> {
-    const txns = await db.select().from(cashboxTransactions);
+    const txns = await db.select().from(cashboxTransactions).orderBy(desc(cashboxTransactions.createdAt));
     const result = [];
     for (const txn of txns) {
       let entityName = "";
@@ -1245,7 +1263,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getExpenses(): Promise<Expense[]> {
-    return db.select().from(expenses);
+    return db.select().from(expenses).orderBy(desc(expenses.createdAt));
   }
 
   async createExpense(data: InsertExpense): Promise<Expense> {

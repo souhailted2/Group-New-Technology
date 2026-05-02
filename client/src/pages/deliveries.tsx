@@ -758,14 +758,20 @@ function DeliveriesHistory() {
     );
   }
 
-  const filteredDeliveries = (deliveriesList || []).filter((d: any) =>
-    !searchDelivery.trim() || (d.supplierName || "").toLowerCase().includes(searchDelivery.toLowerCase())
-  );
+  const filteredDeliveries = [...(deliveriesList || [])]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .filter((d: any) =>
+      !searchDelivery.trim() || (d.supplierName || "").toLowerCase().includes(searchDelivery.toLowerCase())
+    );
 
   return (
     <div className="space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h2 className="text-lg font-semibold">{t("deliveries.deliveryHistory", language)}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">{t("deliveries.deliveryHistory", language)}</h2>
+          <Badge variant="secondary" className="text-xs">{filteredDeliveries.length} تسليم</Badge>
+        </div>
         <div className="relative w-64">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
           <Input
@@ -778,79 +784,147 @@ function DeliveriesHistory() {
         </div>
       </div>
 
-      {filteredDeliveries.map((delivery: any) => (
-        <Card key={delivery.id} data-testid={`card-delivery-${delivery.id}`} className="overflow-hidden">
-          <CardHeader className="pb-3 bg-muted/20">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2 flex-wrap">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Truck className="h-4 w-4 text-primary" />
-                  تسليم #{delivery.id}
-                </CardTitle>
-                <Badge variant="outline" className="font-medium">{delivery.supplierName || "مورد"}</Badge>
-                <Badge variant="secondary">{delivery.warehouseName || "مخزن"}</Badge>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {delivery.receivedAt
-                    ? new Date(delivery.receivedAt).toLocaleDateString("fr-FR")
-                    : delivery.createdAt
-                      ? new Date(delivery.createdAt).toLocaleDateString("fr-FR")
-                      : ""}
+      {/* Delivery Cards */}
+      {filteredDeliveries.map((delivery: any) => {
+        const totalCNY = (delivery.items || []).filter((i: any) => i.currency === "CNY").reduce((s: number, i: any) => s + (i.price || 0) * i.quantity, 0);
+        const totalUSD = (delivery.items || []).filter((i: any) => i.currency === "USD").reduce((s: number, i: any) => s + (i.price || 0) * i.quantity, 0);
+        const dateStr = delivery.receivedAt
+          ? new Date(delivery.receivedAt).toLocaleDateString("fr-FR")
+          : delivery.createdAt
+            ? new Date(delivery.createdAt).toLocaleDateString("fr-FR")
+            : "-";
+
+        return (
+          <div key={delivery.id} data-testid={`card-delivery-${delivery.id}`}
+            className="rounded-2xl border bg-card overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+
+            {/* Card Top Bar */}
+            <div className="bg-gradient-to-l from-primary/5 to-primary/10 border-b px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap">
+                {/* Delivery number badge */}
+                <div className="flex items-center gap-1.5 bg-primary text-primary-foreground rounded-lg px-2.5 py-1 text-sm font-bold">
+                  <Truck className="h-3.5 w-3.5" />
+                  #{delivery.id}
                 </div>
-                {isAdmin && (
-                  <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7"
-                    onClick={() => setDeletingDelivery(delivery)} data-testid={`button-delete-delivery-${delivery.id}`}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+                {/* Date */}
+                <div className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  {dateStr}
+                </div>
               </div>
+              {isAdmin && (
+                <Button size="icon" variant="ghost"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 w-7 mr-auto"
+                  onClick={() => setDeletingDelivery(delivery)}
+                  data-testid={`button-delete-delivery-${delivery.id}`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
-          </CardHeader>
-          {delivery.items && delivery.items.length > 0 && (
-            <CardContent className="pt-3">
-              <div className="overflow-x-auto">
-                <Table className="min-w-[500px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("common.product", language)}</TableHead>
-                      <TableHead className="text-center">{t("common.quantity", language)}</TableHead>
-                      {!hidePrice && <TableHead className="text-center">السعر</TableHead>}
-                      {!hidePrice && <TableHead className="text-center">العملة</TableHead>}
-                      {isAdmin && <TableHead></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {delivery.items.map((item: any) => (
-                      <TableRow key={item.id} data-testid={`row-delivery-item-${item.id}`}>
-                        <TableCell>
-                          <div>
-                            <span className="font-medium">{item.productName || `منتج #${item.productId}`}</span>
-                            {item.productNameZh && (
-                              <span className="block text-xs text-muted-foreground" dir="ltr">{item.productNameZh}</span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-center font-semibold">{item.quantity}</TableCell>
-                        {!hidePrice && <TableCell className="text-center">{item.price?.toFixed(2)}</TableCell>}
-                        {!hidePrice && <TableCell className="text-center">{item.currency === "CNY" ? "يوان ¥" : "دولار $"}</TableCell>}
-                        {isAdmin && (
-                          <TableCell>
-                            <Button size="icon" variant="ghost" onClick={() => openItemEdit(item)} data-testid={`button-edit-delivery-item-${item.id}`}>
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+
+            {/* Supplier & Warehouse info row */}
+            <div className="px-4 py-3 flex items-center gap-4 flex-wrap border-b bg-muted/20">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <User className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">المورد</p>
+                  <p className="text-sm font-semibold">{delivery.supplierName || "-"}</p>
+                </div>
               </div>
-            </CardContent>
-          )}
-        </Card>
-      ))}
+              <div className="w-px h-8 bg-border hidden sm:block" />
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Building2 className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">المخزن</p>
+                  <p className="text-sm font-semibold">{delivery.warehouseName || "-"}</p>
+                </div>
+              </div>
+              <div className="w-px h-8 bg-border hidden sm:block" />
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Package className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">عدد المنتجات</p>
+                  <p className="text-sm font-semibold">{(delivery.items || []).length} صنف</p>
+                </div>
+              </div>
+              {!hidePrice && (totalCNY > 0 || totalUSD > 0) && (
+                <>
+                  <div className="w-px h-8 bg-border hidden sm:block" />
+                  <div className="flex items-center gap-2 mr-auto">
+                    {totalCNY > 0 && (
+                      <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-700 font-semibold text-sm px-2.5">
+                        {totalCNY.toFixed(2)} ¥
+                      </Badge>
+                    )}
+                    {totalUSD > 0 && (
+                      <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700 font-semibold text-sm px-2.5">
+                        {totalUSD.toFixed(2)} $
+                      </Badge>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Items list */}
+            {delivery.items && delivery.items.length > 0 && (
+              <div className="p-4">
+                <div className="space-y-2">
+                  {delivery.items.map((item: any, idx: number) => (
+                    <div key={item.id} data-testid={`row-delivery-item-${item.id}`}
+                      className={`flex items-center gap-3 rounded-xl p-3 ${idx % 2 === 0 ? "bg-muted/30" : "bg-transparent"}`}>
+                      {/* Item number */}
+                      <div className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </div>
+                      {/* Product name */}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm">{item.productName || `منتج #${item.productId}`}</p>
+                        {item.productNameZh && (
+                          <p className="text-xs text-muted-foreground" dir="ltr">{item.productNameZh}</p>
+                        )}
+                      </div>
+                      {/* Quantity */}
+                      <div className="text-center shrink-0">
+                        <p className="text-[10px] text-muted-foreground">الكمية</p>
+                        <p className="font-bold text-sm text-primary">{item.quantity}</p>
+                      </div>
+                      {/* Price */}
+                      {!hidePrice && (
+                        <div className="text-center shrink-0">
+                          <p className="text-[10px] text-muted-foreground">السعر</p>
+                          <p className="font-semibold text-sm">{(item.price || 0).toFixed(2)} {item.currency === "CNY" ? "¥" : "$"}</p>
+                        </div>
+                      )}
+                      {/* Total */}
+                      {!hidePrice && (
+                        <div className="text-center shrink-0">
+                          <p className="text-[10px] text-muted-foreground">المجموع</p>
+                          <p className="font-bold text-sm">{((item.price || 0) * item.quantity).toFixed(2)} {item.currency === "CNY" ? "¥" : "$"}</p>
+                        </div>
+                      )}
+                      {/* Edit button */}
+                      {isAdmin && (
+                        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
+                          onClick={() => openItemEdit(item)}
+                          data-testid={`button-edit-delivery-item-${item.id}`}>
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
 
       <AlertDialog open={!!deletingDelivery} onOpenChange={(open) => { if (!open) setDeletingDelivery(null); }}>
         <AlertDialogContent>
